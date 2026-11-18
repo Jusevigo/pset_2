@@ -68,6 +68,8 @@ services:
     image: spark:4.3.0-python3
     container_name: pset2-spark
     working_dir: /opt/spark/jobs
+    env_file:
+      - .env
     volumes:
       - ./spark/jobs:/opt/spark/jobs
     command: ["bash", "-lc", "tail -f /dev/null"]
