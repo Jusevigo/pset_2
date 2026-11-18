@@ -23,3 +23,9 @@ venv/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/.user.yml

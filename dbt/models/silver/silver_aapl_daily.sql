@@ -1,0 +1,29 @@
+
+WITH standardized AS (
+
+    SELECT
+        UPPER(NULLIF(TRIM(SYMBOL), '')) AS SYMBOL,
+        DATE::DATE AS DATE,
+        CLOSE::FLOAT AS CLOSE,
+        NULLIF(TRIM(SOURCE), '') AS SOURCE,
+        INGESTED_AT::TIMESTAMP_NTZ AS INGESTED_AT
+
+    FROM {{ ref('bronze_aapl_daily') }}
+
+)
+
+SELECT
+    SYMBOL,
+    DATE,
+    CLOSE,
+    SOURCE,
+    INGESTED_AT
+
+FROM standardized
+
+WHERE SYMBOL IS NOT NULL
+    AND DATE IS NOT NULL
+    AND CLOSE IS NOT NULL
+    AND CLOSE > 0
+    AND SOURCE IS NOT NULL
+    AND INGESTED_AT IS NOT NULL

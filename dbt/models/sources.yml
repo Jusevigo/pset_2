@@ -1,0 +1,23 @@
+
+version: 2
+
+sources:
+  - name: raw
+    database: PSET2_DB
+    schema: RAW
+    description: "Datos históricos de precios diarios de Apple provenientes de Yahoo Finance."
+
+    tables:
+      - name: aapl_daily
+        description: "Precios diarios de cierre de AAPL cargados mediante Kestra."
+        columns:
+          - name: SYMBOL
+            description: "Símbolo bursátil del activo."
+          - name: DATE
+            description: "Fecha de negociación."
+          - name: CLOSE
+            description: "Precio de cierre sin ajuste."
+          - name: SOURCE
+            description: "Fuente de los datos."
+          - name: INGESTED_AT
+            description: "Fecha y hora de ingesta en Snowflake."

@@ -1,0 +1,67 @@
+
+version: 2
+
+models:
+  - name: dim_date
+    description: "Dimensión de fechas de negociación de AAPL."
+    columns:
+      - name: DATE_KEY
+        description: "Clave de fecha con formato YYYYMMDD."
+        data_tests:
+          - not_null
+          - unique
+
+      - name: FULL_DATE
+        data_tests:
+          - not_null
+          - unique
+
+  - name: dim_symbol
+    description: "Dimensión de símbolos bursátiles."
+    columns:
+      - name: SYMBOL_KEY
+        data_tests:
+          - not_null
+          - unique
+
+      - name: SYMBOL
+        data_tests:
+          - not_null
+          - unique
+          - accepted_values:
+              arguments:
+                values: ['AAPL']
+
+  - name: fact_aapl_daily
+    description: "Hechos diarios de precios de cierre de AAPL."
+    columns:
+      - name: DATE_KEY
+        description: "Referencia a la dimensión de fechas."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: DATE_KEY
+
+      - name: SYMBOL_KEY
+        description: "Referencia a la dimensión de símbolos."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_symbol')
+                field: SYMBOL_KEY
+
+      - name: CLOSE_PRICE
+        description: "Precio de cierre diario."
+        data_tests:
+          - not_null
+
+      - name: SOURCE
+        data_tests:
+          - not_null
+
+      - name: INGESTED_AT
+        data_tests:
+          - not_null
