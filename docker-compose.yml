@@ -1,0 +1,78 @@
+
+services:
+  postgres:
+    image: postgres:18
+    container_name: pset2-postgres
+    environment:
+      POSTGRES_DB: kestra
+      POSTGRES_USER: kestra
+      POSTGRES_PASSWORD: k3str4
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kestra -d kestra"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  kestra:
+    image: kestra/kestra:v2.0.7
+    container_name: pset2-kestra
+    user: "root"
+    command: server standalone
+    volumes:
+      - kestra_data:/app/storage
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./.kestra-wd:/tmp/kestra-wd
+    env_file:
+      - .env_encoded
+    environment:
+      KESTRA_CONFIGURATION: |
+        datasources:
+          postgres:
+            url: jdbc:postgresql://postgres:5432/kestra
+            driverClassName: org.postgresql.Driver
+            username: kestra
+            password: k3str4
+        kestra:
+          plugins:
+            configurations:
+              - type: io.kestra.plugin.scripts.runner.docker.Docker
+                values:
+                  volumeEnabled: true
+          server:
+            basic-auth:
+              username: admin@kestra.io
+              password: Admin1234
+          repository:
+            type: postgres
+          storage:
+            type: local
+            local:
+              base-path: "/app/storage"
+          queue:
+            type: postgres
+          tasks:
+            tmp-dir:
+              path: /tmp/kestra-wd/tmp
+          url: http://localhost:8080/
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  spark:
+    image: spark:4.3.0-python3
+    container_name: pset2-spark
+    working_dir: /opt/spark/jobs
+    volumes:
+      - ./spark/jobs:/opt/spark/jobs
+    command: ["bash", "-lc", "tail -f /dev/null"]
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  kestra_data:

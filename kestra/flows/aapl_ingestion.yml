@@ -1,0 +1,58 @@
+
+id: aapl_ingestion
+namespace: pset2
+
+inputs:
+  - id: start_date
+    type: DATE
+    defaults: "2010-07-01"
+    displayName: "Fecha inicial"
+    description: "Primera fecha que se desea descargar."
+
+  - id: end_date
+    type: DATE
+    defaults: "2026-10-01"
+    displayName: "Fecha final"
+    description: "Fecha final exclusiva del período histórico."
+
+tasks:
+  - id: ingest_aapl
+    type: io.kestra.plugin.scripts.shell.Commands
+
+    containerImage: pset2-ingesta:1.0
+
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      volumes:
+        - /run/desktop/mnt/host/c/USFQ/Maestría/Ciencia_Datos/pset_2/data/raw:/app/data/raw
+
+    env:
+      SNOWFLAKE_ACCOUNT: "{{ secret('SNOWFLAKE_ACCOUNT') }}"
+      SNOWFLAKE_USER: "{{ secret('SNOWFLAKE_USER') }}"
+      SNOWFLAKE_PASSWORD: "{{ secret('SNOWFLAKE_PASSWORD') }}"
+      SNOWFLAKE_ROLE: "{{ secret('SNOWFLAKE_ROLE') }}"
+      SNOWFLAKE_WAREHOUSE: "{{ secret('SNOWFLAKE_WAREHOUSE') }}"
+      SNOWFLAKE_DATABASE: "{{ secret('SNOWFLAKE_DATABASE') }}"
+      SNOWFLAKE_SCHEMA: "{{ secret('SNOWFLAKE_SCHEMA') }}"
+      START_DATE: "{{ inputs.start_date }}"
+      END_DATE: "{{ inputs.end_date }}"
+
+    commands:
+      - python -u /app/ingesta/ingesta.py
+
+    retry:
+      type: exponential
+      interval: PT1M
+      maxInterval: PT8M
+      maxAttempts: 6
+      maxDuration: PT30M
+      warningOnRetry: true
+
+triggers:
+  - id: daily_schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 23 * * 1-5"
+    timezone: "Etc/UTC"
+    inputs:
+      start_date: "2010-07-01"
+      end_date: "{{ trigger.date | dateAdd(1, 'DAYS') | date('yyyy-MM-dd') }}"
