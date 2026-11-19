@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: kestra
       POSTGRES_USER: kestra
-      POSTGRES_PASSWORD: k3str4
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
@@ -34,7 +34,7 @@ services:
             url: jdbc:postgresql://postgres:5432/kestra
             driverClassName: org.postgresql.Driver
             username: kestra
-            password: k3str4
+            password: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
         kestra:
           plugins:
             configurations:
@@ -43,8 +43,8 @@ services:
                   volumeEnabled: true
           server:
             basic-auth:
-              username: admin@kestra.io
-              password: Admin1234
+              username: ${KESTRA_BASIC_AUTH_USERNAME:-admin@kestra.io}
+              password: ${KESTRA_BASIC_AUTH_PASSWORD:?Define KESTRA_BASIC_AUTH_PASSWORD en .env}
           repository:
             type: postgres
           storage:
@@ -65,14 +65,27 @@ services:
     restart: unless-stopped
 
   spark:
-    image: spark:4.3.0-python3
+    build:
+      context: ./spark
+      dockerfile: Dockerfile
+    image: pset2-spark:1.0
     container_name: pset2-spark
     working_dir: /opt/spark/jobs
     env_file:
       - .env
-    volumes:
-      - ./spark/jobs:/opt/spark/jobs
     command: ["bash", "-lc", "tail -f /dev/null"]
+    restart: unless-stopped
+
+  dbt:
+    build:
+      context: ./dbt
+      dockerfile: Dockerfile
+    image: pset2-dbt:1.0
+    container_name: pset2-dbt
+    working_dir: /usr/app
+    env_file:
+      - .env
+    command: ["tail", "-f", "/dev/null"]
     restart: unless-stopped
 
 volumes:

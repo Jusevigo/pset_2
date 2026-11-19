@@ -1,5 +1,6 @@
 
 import os
+import re
 from urllib.parse import urlencode
 
 from pyspark.sql import SparkSession, functions as F
@@ -18,14 +19,30 @@ def required_env(name):
     return value
 
 
+def validate_identifier(value, name):
+    value = value.strip().upper()
+
+    if not re.fullmatch(r"[A-Z_][A-Z0-9_$]*", value):
+        raise ValueError(f"Identificador Snowflake inválido: {name}")
+
+    return value
+
+
 ACCOUNT = required_env("SNOWFLAKE_ACCOUNT")
 USER = required_env("SNOWFLAKE_USER")
 PASSWORD = required_env("SNOWFLAKE_PASSWORD")
 ROLE = required_env("SNOWFLAKE_ROLE")
 WAREHOUSE = required_env("SNOWFLAKE_WAREHOUSE")
-DATABASE = required_env("SNOWFLAKE_DATABASE")
+DATABASE = validate_identifier(
+    required_env("SNOWFLAKE_DATABASE"),
+    "SNOWFLAKE_DATABASE"
+)
 
-# Normalizar el identificador de cuenta para construir la URL JDBC
+OBT_SCHEMA = "OBT"
+TARGET_TABLE = f"{DATABASE}.{OBT_SCHEMA}.AAPL_DAILY_OBT"
+STAGING_TABLE = f"{DATABASE}.{OBT_SCHEMA}.AAPL_DAILY_OBT_STG"
+
+# Normalizar el identificador de cuenta
 account_host = ACCOUNT.strip()
 account_host = account_host.removeprefix("https://")
 account_host = account_host.removeprefix("http://")
@@ -39,7 +56,7 @@ if account_host.lower().endswith(suffix):
 connection_params = urlencode({
     "warehouse": WAREHOUSE,
     "db": DATABASE,
-    "schema": "OBT",
+    "schema": OBT_SCHEMA,
     "role": ROLE
 })
 
@@ -59,8 +76,60 @@ JDBC_PROPERTIES = {
 
 
 # --------------------------------------------------
-# 2. Función de lectura desde Snowflake
+# 2. Funciones JDBC
 # --------------------------------------------------
+
+
+def execute_snowflake_sql(spark, sql):
+    """Ejecuta SQL utilizando el registro JDBC de Spark."""
+
+    jvm = spark.sparkContext._jvm
+
+    connection = None
+    statement = None
+
+    try:
+        # Obtener el objeto DriverRegistry de Spark
+        registry_class = getattr(
+            jvm.org.apache.spark.sql.execution.datasources.jdbc,
+            "DriverRegistry$"
+        )
+
+        registry = getattr(registry_class, "MODULE$")
+
+        # Registrar el driver utilizando el classloader de Spark
+        registry.register(JDBC_DRIVER)
+
+        # Obtener la instancia del driver registrada
+        driver = registry.get(JDBC_DRIVER)
+
+        # Preparar las propiedades de conexión
+        properties = jvm.java.util.Properties()
+        properties.setProperty("user", USER)
+        properties.setProperty("password", PASSWORD)
+
+        # Crear la conexión directamente mediante el driver
+        connection = driver.connect(JDBC_URL, properties)
+
+        if connection is None:
+            raise RuntimeError(
+                "El driver JDBC de Snowflake no pudo establecer "
+                "la conexión."
+            )
+
+        statement = connection.createStatement()
+        statement.execute(sql)
+
+        print("Sentencia SQL ejecutada correctamente.")
+
+    finally:
+        if statement is not None:
+            statement.close()
+
+        if connection is not None:
+            connection.close()
+
+
 
 def read_snowflake_table(spark, table_name):
     print(f"Leyendo tabla: {table_name}")
@@ -76,7 +145,52 @@ def read_snowflake_table(spark, table_name):
 
 
 # --------------------------------------------------
-# 3. Construcción de la OBT con Spark
+# 3. Preparación automática del destino
+# --------------------------------------------------
+
+def prepare_snowflake_destination(spark):
+
+    print(f"Preparando esquema {DATABASE}.{OBT_SCHEMA}...")
+
+    execute_snowflake_sql(
+        spark,
+        f"CREATE SCHEMA IF NOT EXISTS {DATABASE}.{OBT_SCHEMA}"
+    )
+
+    print("Preparando tabla de staging...")
+
+    staging_ddl = f"""
+    CREATE TRANSIENT TABLE IF NOT EXISTS {STAGING_TABLE} (
+        DATE_KEY NUMBER(38,0),
+        TRADE_DATE DATE,
+        CALENDAR_YEAR NUMBER(38,0),
+        CALENDAR_QUARTER NUMBER(38,0),
+        MONTH_NUMBER NUMBER(38,0),
+        MONTH_NAME VARCHAR(20),
+        DAY_OF_MONTH NUMBER(38,0),
+        DAY_OF_WEEK_ISO NUMBER(38,0),
+        DAY_NAME VARCHAR(20),
+        SYMBOL_KEY NUMBER(38,0),
+        SYMBOL VARCHAR(10),
+        CLOSE_PRICE FLOAT,
+        SOURCE VARCHAR(100),
+        INGESTED_AT TIMESTAMP_NTZ
+    )
+    """
+
+    execute_snowflake_sql(spark, staging_ddl)
+
+    # Limpiar datos de una ejecución anterior
+    execute_snowflake_sql(
+        spark,
+        f"TRUNCATE TABLE {STAGING_TABLE}"
+    )
+
+    print("Destino preparado correctamente.")
+
+
+# --------------------------------------------------
+# 4. Construcción de la OBT con Spark
 # --------------------------------------------------
 
 def main():
@@ -91,7 +205,7 @@ def main():
     try:
         print("Iniciando construcción de la OBT...")
 
-        # Leer las tres tablas dimensionales de Gold
+        # Leer las tres tablas de Gold
         fact = read_snowflake_table(
             spark,
             f"{DATABASE}.GOLD.FACT_AAPL_DAILY"
@@ -107,12 +221,11 @@ def main():
             f"{DATABASE}.GOLD.DIM_SYMBOL"
         )
 
-        # Contar los registros de la tabla de hechos
         total_fact = fact.count()
 
         print(f"Registros en Gold Fact: {total_fact}")
 
-        # Unir hechos y dimensiones utilizando PySpark
+        # Construir la OBT mediante PySpark
         obt = (
             fact.alias("f")
 
@@ -146,7 +259,7 @@ def main():
             )
         )
 
-        # Validaciones antes de cargar
+        # Validar grano antes de escribir
         total_obt = obt.count()
 
         duplicate_keys = (
@@ -171,45 +284,90 @@ def main():
             )
 
         # --------------------------------------------------
-        # 4. Escritura de la OBT en Snowflake
+        # 5. Preparar staging y escribir los datos
         # --------------------------------------------------
 
-        target_table = f"{DATABASE}.OBT.AAPL_DAILY_OBT"
+        prepare_snowflake_destination(spark)
 
-        print(f"Escribiendo tabla: {target_table}")
+        print(f"Escribiendo datos en staging: {STAGING_TABLE}")
 
         (
             obt.coalesce(1)
             .write
             .format("jdbc")
             .option("url", JDBC_URL)
-            .option("dbtable", target_table)
+            .option("dbtable", STAGING_TABLE)
             .option("user", USER)
             .option("password", PASSWORD)
             .option("driver", JDBC_DRIVER)
             .option("batchsize", "1000")
-            .mode("overwrite")
+            .mode("append")
             .save()
         )
 
+        # Comprobar la carga antes de publicar
+        staging = read_snowflake_table(spark, STAGING_TABLE)
+        total_staging = staging.count()
+
+        print(f"Registros en staging: {total_staging}")
+
+        if total_staging != total_obt:
+            raise ValueError(
+                "La cantidad de registros en staging no coincide "
+                "con la OBT construida."
+            )
+
         # --------------------------------------------------
-        # 5. Validación de la tabla escrita
+        # 6. Publicar la OBT definitiva
         # --------------------------------------------------
 
-        result = read_snowflake_table(
+        print(f"Publicando tabla definitiva: {TARGET_TABLE}")
+
+        execute_snowflake_sql(
             spark,
-            target_table
+            f"""
+            CREATE OR REPLACE TABLE {TARGET_TABLE}
+            COPY GRANTS
+            AS
+            SELECT *
+            FROM {STAGING_TABLE}
+            """
         )
+
+        # --------------------------------------------------
+        # 7. Validación final
+        # --------------------------------------------------
+
+        result = read_snowflake_table(spark, TARGET_TABLE)
 
         total_written = result.count()
 
+        published_duplicates = (
+            result.groupBy("DATE_KEY", "SYMBOL_KEY")
+            .count()
+            .filter(F.col("count") > 1)
+            .count()
+        )
+
         print(f"Registros escritos en OBT: {total_written}")
+        print(f"Duplicados en OBT: {published_duplicates}")
 
         if total_written != total_obt:
             raise ValueError(
-                "La cantidad de registros escritos no coincide "
+                "La cantidad de registros publicados no coincide "
                 "con la OBT construida."
             )
+
+        if published_duplicates > 0:
+            raise ValueError(
+                "Se encontraron duplicados en la tabla definitiva."
+            )
+
+        # Limpiar staging únicamente después de validar
+        execute_snowflake_sql(
+            spark,
+            f"DROP TABLE IF EXISTS {STAGING_TABLE}"
+        )
 
         print("OBT construida y validada correctamente.")
 

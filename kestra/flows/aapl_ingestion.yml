@@ -21,10 +21,11 @@ tasks:
 
     containerImage: pset2-ingesta:1.0
 
+    outputFiles:
+      - aapl_daily.csv
+
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
-      volumes:
-        - /run/desktop/mnt/host/c/USFQ/Maestría/Ciencia_Datos/pset_2/data/raw:/app/data/raw
 
     env:
       SNOWFLAKE_ACCOUNT: "{{ secret('SNOWFLAKE_ACCOUNT') }}"
@@ -36,6 +37,7 @@ tasks:
       SNOWFLAKE_SCHEMA: "{{ secret('SNOWFLAKE_SCHEMA') }}"
       START_DATE: "{{ inputs.start_date }}"
       END_DATE: "{{ inputs.end_date }}"
+      OUTPUT_CSV_PATH: "aapl_daily.csv"
 
     commands:
       - python -u /app/ingesta/ingesta.py
@@ -48,11 +50,121 @@ tasks:
       maxDuration: PT30M
       warningOnRetry: true
 
+  - id: dbt_debug
+    type: io.kestra.plugin.scripts.shell.Commands
+
+    containerImage: pset2-dbt:1.0
+
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: NEVER
+
+    env:
+      SNOWFLAKE_ACCOUNT: "{{ secret('SNOWFLAKE_ACCOUNT') }}"
+      SNOWFLAKE_USER: "{{ secret('SNOWFLAKE_USER') }}"
+      SNOWFLAKE_PASSWORD: "{{ secret('SNOWFLAKE_PASSWORD') }}"
+      SNOWFLAKE_ROLE: "{{ secret('SNOWFLAKE_ROLE') }}"
+      SNOWFLAKE_WAREHOUSE: "{{ secret('SNOWFLAKE_WAREHOUSE') }}"
+      SNOWFLAKE_DATABASE: "{{ secret('SNOWFLAKE_DATABASE') }}"
+      SNOWFLAKE_SCHEMA: "{{ secret('SNOWFLAKE_SCHEMA') }}"
+
+    commands:
+      - dbt debug --project-dir /usr/app --profiles-dir /usr/app
+
+    retry:
+      type: exponential
+      interval: PT1M
+      maxInterval: PT8M
+      maxAttempts: 6
+      maxDuration: PT30M
+      warningOnRetry: true
+
+  - id: dbt_run
+    type: io.kestra.plugin.scripts.shell.Commands
+
+    containerImage: pset2-dbt:1.0
+
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: NEVER
+
+    env:
+      SNOWFLAKE_ACCOUNT: "{{ secret('SNOWFLAKE_ACCOUNT') }}"
+      SNOWFLAKE_USER: "{{ secret('SNOWFLAKE_USER') }}"
+      SNOWFLAKE_PASSWORD: "{{ secret('SNOWFLAKE_PASSWORD') }}"
+      SNOWFLAKE_ROLE: "{{ secret('SNOWFLAKE_ROLE') }}"
+      SNOWFLAKE_WAREHOUSE: "{{ secret('SNOWFLAKE_WAREHOUSE') }}"
+      SNOWFLAKE_DATABASE: "{{ secret('SNOWFLAKE_DATABASE') }}"
+      SNOWFLAKE_SCHEMA: "{{ secret('SNOWFLAKE_SCHEMA') }}"
+
+    commands:
+      - dbt run --project-dir /usr/app --profiles-dir /usr/app
+
+    retry:
+      type: exponential
+      interval: PT1M
+      maxInterval: PT8M
+      maxAttempts: 6
+      maxDuration: PT30M
+      warningOnRetry: true
+
+  - id: dbt_test
+    type: io.kestra.plugin.scripts.shell.Commands
+
+    containerImage: pset2-dbt:1.0
+
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: NEVER
+
+    env:
+      SNOWFLAKE_ACCOUNT: "{{ secret('SNOWFLAKE_ACCOUNT') }}"
+      SNOWFLAKE_USER: "{{ secret('SNOWFLAKE_USER') }}"
+      SNOWFLAKE_PASSWORD: "{{ secret('SNOWFLAKE_PASSWORD') }}"
+      SNOWFLAKE_ROLE: "{{ secret('SNOWFLAKE_ROLE') }}"
+      SNOWFLAKE_WAREHOUSE: "{{ secret('SNOWFLAKE_WAREHOUSE') }}"
+      SNOWFLAKE_DATABASE: "{{ secret('SNOWFLAKE_DATABASE') }}"
+      SNOWFLAKE_SCHEMA: "{{ secret('SNOWFLAKE_SCHEMA') }}"
+
+    commands:
+      - dbt test --project-dir /usr/app --profiles-dir /usr/app
+
+    retry:
+      type: exponential
+      interval: PT1M
+      maxInterval: PT8M
+      maxAttempts: 6
+      maxDuration: PT30M
+      warningOnRetry: true
+
+  - id: spark_build_obt
+    type: io.kestra.plugin.scripts.shell.Commands
+
+    containerImage: pset2-spark:1.0
+
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: NEVER
+
+    env:
+      SNOWFLAKE_ACCOUNT: "{{ secret('SNOWFLAKE_ACCOUNT') }}"
+      SNOWFLAKE_USER: "{{ secret('SNOWFLAKE_USER') }}"
+      SNOWFLAKE_PASSWORD: "{{ secret('SNOWFLAKE_PASSWORD') }}"
+      SNOWFLAKE_ROLE: "{{ secret('SNOWFLAKE_ROLE') }}"
+      SNOWFLAKE_WAREHOUSE: "{{ secret('SNOWFLAKE_WAREHOUSE') }}"
+      SNOWFLAKE_DATABASE: "{{ secret('SNOWFLAKE_DATABASE') }}"
+
+    commands:
+      - /opt/spark/bin/spark-submit --conf spark.jars.ivy=/tmp/spark-ivy --packages net.snowflake:snowflake-jdbc:4.4.1 /opt/spark/jobs/build_obt.py
+
+
 triggers:
   - id: daily_schedule
     type: io.kestra.plugin.core.trigger.Schedule
-    cron: "0 23 * * 1-5"
-    timezone: "Etc/UTC"
+    cron: "0 18 * * 1-5"
+    timezone: "America/Guayaquil"
+    allowConcurrent: false
+    recoverMissedSchedules: LAST
     inputs:
       start_date: "2010-07-01"
       end_date: "{{ trigger.date | dateAdd(1, 'DAYS') | date('yyyy-MM-dd') }}"

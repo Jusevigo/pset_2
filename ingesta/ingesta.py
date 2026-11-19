@@ -15,7 +15,8 @@ END_DATE = os.getenv("END_DATE", "2026-10-01")
 # Directorio raíz del proyecto
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
-
+# Ruta opcional proporcionada por Kestra para almacenar el CSV
+OUTPUT_CSV_PATH = os.getenv("OUTPUT_CSV_PATH")
 
 def extract_data():
     """Descarga los precios históricos de cierre de Yahoo Finance."""
@@ -56,13 +57,18 @@ def extract_data():
 def save_raw_csv(data):
     """Guarda los datos extraídos como archivo CSV."""
 
-    RAW_DIR.mkdir(parents=True, exist_ok=True)
+    if OUTPUT_CSV_PATH:
+        # Ejecución orquestada por Kestra
+        output_path = Path(OUTPUT_CSV_PATH)
+    else:
+        # Ejecución manual desde el proyecto local
+        output_path = RAW_DIR / "aapl_daily.csv"
 
-    output_path = RAW_DIR / "aapl_daily.csv"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
     data.to_csv(output_path, index=False)
 
     print(f"Archivo CSV guardado en: {output_path}")
-
 
 def load_to_snowflake(data):
     """Carga los registros en RAW utilizando staging y MERGE."""

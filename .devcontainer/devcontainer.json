@@ -1,0 +1,21 @@
+
+{
+  "name": "PSet 2 - AAPL Data Pipeline",
+  "image": "mcr.microsoft.com/devcontainers/base:2-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:4": {
+      "version": "latest",
+      "moby": true,
+      "dockerDashComposeVersion": "latest"
+    }
+  },
+  "forwardPorts": [
+    8080
+  ],
+  "portsAttributes": {
+    "8080": {
+      "label": "Kestra",
+      "onAutoForward": "notify"
+    }
+  }
+}

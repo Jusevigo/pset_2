@@ -1,0 +1,35 @@
+
+# Credenciales y variables de entorno
+.env
+.env_encoded
+.env.*
+
+# Git y configuración local
+.git/
+.gitignore
+.vscode/
+.devcontainer/
+
+# Archivos temporales de Python
+__pycache__/
+*.py[cod]
+*.log
+*.tmp
+
+# Datos y configuraciones que no necesita la imagen de ingesta
+data/
+kestra/
+dbt/
+spark/
+docs/
+scripts/
+
+# Entorno virtual
+.venv/
+venv/
+
+# Exclusión explícita de caché Python en cualquier directorio
+**/__pycache__
+**/__pycache__/**
+**/*.pyc
+**/*.pyo
