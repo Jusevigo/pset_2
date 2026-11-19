@@ -1,312 +1,351 @@
-# PSet 2 — Pipeline de Ingeniería de Datos para AAPL
+# PSet 2 — Pipeline ELT de datos financieros de AAPL
 
-## 1. Descripción
+Proyecto de ingeniería de datos para extraer, cargar, transformar y consolidar datos históricos diarios de Apple Inc. (AAPL). La solución utiliza Yahoo Finance como fuente, Kestra para la orquestación, Snowflake como almacenamiento, dbt para las transformaciones y Apache Spark para construir la tabla final One Big Table (OBT).
 
-Este repositorio implementa un pipeline ELT para procesar datos históricos de precios diarios de Apple Inc. (AAPL), obtenidos de Yahoo Finance.
+## 1. Arquitectura
 
-La ingesta se realiza con Python y Kestra. dbt construye las capas Bronze, Silver y Gold en Snowflake, y Apache Spark genera una One Big Table (OBT) a partir del modelo dimensional Gold.
-
-El resultado final se almacena en Snowflake y queda preparado para las siguientes etapas de análisis y modelado.
-
-## 2. Flujo del pipeline
+El flujo implementado es:
 
 ```text
 Yahoo Finance
-      |
-      v
-    Kestra
-      |
-      v
-Python / Ingesta
-      |
-      v
-Snowflake RAW
-      |
-      v
-    dbt Core
-      |
-      v
-   Bronze
-      |
-      v
-   Silver
-      |
-      v
-   Gold
-      |
-      v
-  Apache Spark
-      |
-      v
-Snowflake OBT
+     |
+     v
+Python / yfinance
+     |
+     v
+Kestra (orquestación)
+     |
+     v
+Snowflake - RAW
+     |
+     v
+dbt - BRONZE
+     |
+     v
+dbt - SILVER
+     |
+     v
+dbt - GOLD
+     |
+     v
+Apache Spark
+     |
+     v
+Snowflake - OBT
 ```
 
-Kestra controla la ejecución secuencial de cinco tareas:
+**Componentes principales**
 
-1. `ingest_aapl`: descarga los datos y los carga en RAW.
-2. `dbt_debug`: comprueba la conexión con Snowflake.
-3. `dbt_run`: construye Bronze, Silver y Gold.
-4. `dbt_test`: ejecuta las pruebas de calidad.
-5. `spark_build_obt`: construye y publica la OBT.
+| Componente | Responsabilidad |
+|---|---|
+| Yahoo Finance / yfinance | Fuente de precios históricos diarios |
+| Python | Extracción y carga de datos |
+| Kestra 2.0.7 | Orquestación de las tareas |
+| PostgreSQL 18 | Base de datos de Kestra |
+| Snowflake | Almacenamiento y procesamiento de datos |
+| dbt Core 1.12.7 | Transformaciones SQL y pruebas de calidad |
+| Apache Spark 4.3.0 | Integración de las tablas Gold y construcción de la OBT |
+| Docker Compose | Administración del entorno de ejecución |
 
-## 3. Estructura del repositorio
+## 2. Estructura del repositorio
 
 ```text
-pset_2/
+.
 ├── .devcontainer/
 │   └── devcontainer.json
-├── .dockerignore
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-├── .env.example
-├── scripts/
-│   ├── prepare_env.py
-│   └── initialize_snowflake.sql
+├── data/
+│   └── raw/
+├── dbt/
+│   ├── models/
+│   │   ├── bronze/
+│   │   ├── silver/
+│   │   └── gold/
+│   ├── tests/
+│   ├── macros/
+│   ├── dbt_project.yml
+│   ├── profiles.yml
+│   └── Dockerfile
+├── docs/
 ├── ingesta/
 │   └── ingesta.py
 ├── kestra/
 │   └── flows/
 │       └── aapl_ingestion.yml
-├── dbt/
-│   ├── Dockerfile
-│   ├── dbt_project.yml
-│   ├── profiles.yml
-│   ├── macros/
-│   ├── models/
-│   └── tests/
+├── scripts/
+│   ├── initialize_snowflake.sql
+│   └── prepare_env.py
 ├── spark/
-│   ├── Dockerfile
-│   └── jobs/
-│       └── build_obt.py
-└── README.md
+│   ├── jobs/
+│   │   └── build_obt.py
+│   └── Dockerfile
+├── .dockerignore
+├── .env.example
+├── .gitignore
+├── docker-compose.yml
+├── Dockerfile
+└── requirements.txt
 ```
 
-## 4. Requisitos y configuración
+## 3. Requisitos previos
 
-### 4.1. Entorno
+Antes de ejecutar el proyecto, se necesita:
 
-El proyecto está preparado para ejecutarse mediante GitHub Codespaces y Docker-in-Docker.
+- Git.
+- Docker Desktop con Docker Compose.
+- Python instalado para ejecutar el script de preparación del entorno.
+- Una cuenta de Snowflake con permisos para configurar los recursos requeridos.
+- Acceso a Internet para consultar Yahoo Finance y descargar las dependencias necesarias.
 
-También puede ejecutarse localmente utilizando Docker Desktop y Docker Compose.
+Se recomienda iniciar Docker Desktop antes de ejecutar los comandos siguientes.
 
-### 4.2. Configuración de secretos
+## 4. Clonar el repositorio
 
-Antes de crear un Codespace, configurar los siguientes Repository Secrets en:
+```bash
+git clone <URL_DEL_REPOSITORIO>
+cd pset_2
+```
 
-GitHub → Repository → Settings → Secrets and variables → Codespaces.
+## 5. Configurar las variables de entorno
 
-| Secreto | Descripción |
-|---|---|
-| `SNOWFLAKE_ACCOUNT` | Identificador de la cuenta Snowflake. |
-| `SNOWFLAKE_USER` | Usuario de Snowflake. |
-| `SNOWFLAKE_PASSWORD` | Contraseña de Snowflake. |
-| `POSTGRES_PASSWORD` | Contraseña de PostgreSQL. |
-| `KESTRA_BASIC_AUTH_PASSWORD` | Contraseña de acceso a Kestra. |
+El proyecto utiliza variables de entorno para evitar almacenar credenciales directamente en el código.
 
-El script `scripts/prepare_env.py` genera automáticamente los archivos `.env` y `.env_encoded` a partir de las variables disponibles en el entorno.
+Primero, crear el archivo `.env` a partir de la plantilla:
 
-Ejecutar desde la raíz del repositorio:
+**Windows PowerShell:**
+
+```powershell
+Copy-Item .env.example .env
+```
+
+**Linux / macOS:**
+
+```bash
+cp .env.example .env
+```
+
+Editar `.env` y completar las variables:
+
+```dotenv
+SNOWFLAKE_ACCOUNT=
+SNOWFLAKE_USER=
+SNOWFLAKE_PASSWORD=
+SNOWFLAKE_ROLE=PSET2_ROLE
+SNOWFLAKE_WAREHOUSE=COMPUTE_WH
+SNOWFLAKE_DATABASE=PSET2_DB
+SNOWFLAKE_SCHEMA=RAW
+
+POSTGRES_PASSWORD=
+KESTRA_BASIC_AUTH_USERNAME=admin@kestra.io
+KESTRA_BASIC_AUTH_PASSWORD=
+```
+
+### Configuración de Snowflake
+
+- `SNOWFLAKE_ACCOUNT`: identificador de cuenta utilizado para establecer la conexión. No debe incluir `https://` ni `.snowflakecomputing.com`.
+- `SNOWFLAKE_USER`: usuario de inicio de sesión de Snowflake.
+- `SNOWFLAKE_PASSWORD`: contraseña del usuario.
+- `SNOWFLAKE_ROLE`: rol utilizado por el proyecto.
+- `SNOWFLAKE_WAREHOUSE`: warehouse de procesamiento.
+- `SNOWFLAKE_DATABASE`: base de datos del proyecto.
+- `SNOWFLAKE_SCHEMA`: esquema de entrada de los datos.
+
+**Importante:** el identificador de cuenta y el nombre de usuario son valores diferentes. Cada persona debe utilizar los correspondientes a su propia cuenta de Snowflake.
+
+No compartir ni subir a GitHub los archivos `.env` o `.env_encoded`.
+
+### Generar la configuración de secretos
+
+Una vez completado `.env`, ejecutar:
 
 ```bash
 python scripts/prepare_env.py
 ```
 
-El archivo `.env.example` contiene los nombres y valores predeterminados de las variables no sensibles.
+El script valida las variables requeridas, conserva los valores configurados y genera:
 
-Los archivos `.env` y `.env_encoded` son sensibles y están excluidos de Git. Los valores Snowflake utilizados por Kestra se codifican en Base64; esta codificación no constituye cifrado.
+- `.env`: configuración local del proyecto.
+- `.env_encoded`: variables codificadas en Base64 para su utilización como secretos en Kestra.
 
-## 5. Inicialización de Snowflake
+**Nota de seguridad:** Base64 es un mecanismo de codificación, no de cifrado. Los archivos generados contienen información sensible y deben permanecer fuera del repositorio.
 
-Antes de ejecutar el pipeline, se deben preparar los objetos de Snowflake.
+## 6. Inicializar Snowflake
 
-Abrir Snowflake Worksheets, seleccionar el rol `ACCOUNTADMIN` y ejecutar el contenido de:
+Antes de ejecutar el pipeline, deben existir los recursos necesarios en Snowflake.
+
+Abrir una hoja de trabajo (*Worksheet*) en Snowflake y ejecutar el contenido de:
 
 ```text
 scripts/initialize_snowflake.sql
 ```
 
-El script prepara:
+La inicialización requiere un rol administrativo con permisos suficientes para crear o configurar los recursos del proyecto y conceder privilegios al rol `PSET2_ROLE`.
+
+El script prepara los recursos iniciales utilizados por la ingesta:
 
 - Rol `PSET2_ROLE`.
 - Warehouse `COMPUTE_WH`.
 - Base de datos `PSET2_DB`.
 - Esquema `RAW`.
-- Tabla `PSET2_DB.RAW.AAPL_DAILY`.
-- Permisos de acceso necesarios.
+- Tabla de entrada `AAPL_DAILY` y los permisos correspondientes.
 
-Si el rol aún no está asignado al usuario de Snowflake, ejecutar adicionalmente:
+El usuario de Snowflake debe tener los privilegios necesarios para utilizar el rol, warehouse, base de datos y esquemas del proyecto.
 
-```sql
-GRANT ROLE PSET2_ROLE TO USER <SNOWFLAKE_USER>;
-```
+Las capas de transformación y la tabla final se construyen durante la ejecución del pipeline.
 
-El script puede ejecutarse nuevamente sin reemplazar los objetos existentes, gracias a las cláusulas `IF NOT EXISTS`.
+## 7. Construir y levantar los servicios
 
-Los esquemas Bronze, Silver, Gold y OBT se preparan durante las transformaciones y el procesamiento posterior.
-
-## 6. Construcción e inicio de la infraestructura
-
-Desde la terminal, en la raíz del repositorio, generar primero los archivos de entorno:
-
-```bash
-python scripts/prepare_env.py
-```
-
-Construir la imagen de ingesta:
-
-```bash
-docker build -t pset2-ingesta:1.0 .
-```
-
-Construir las imágenes de dbt y Spark:
-
-```bash
-docker compose build dbt spark
-```
-
-Validar la configuración:
+Validar primero la configuración de Docker Compose:
 
 ```bash
 docker compose config --quiet
 ```
 
-Iniciar los servicios:
+Construir las imágenes:
+
+```bash
+docker compose build
+```
+
+Levantar los servicios:
 
 ```bash
 docker compose up -d
 ```
 
-La infraestructura incluye:
-
-| Servicio | Función |
-|---|---|
-| PostgreSQL 18 | Almacenamiento interno de Kestra. |
-| Kestra 2.0.7 | Orquestación del pipeline. |
-| dbt Core 1.12.7 | Transformaciones SQL. |
-| Apache Spark 4.3.0 | Construcción de la OBT. |
-
-Comprobar el estado:
+Comprobar el estado de los contenedores:
 
 ```bash
 docker compose ps
 ```
 
-La interfaz de Kestra está disponible en el puerto 8080:
+Los servicios principales son PostgreSQL, Kestra, dbt y Spark.
+
+La interfaz web de Kestra está disponible en:
 
 ```text
 http://localhost:8080
 ```
 
-Las imágenes personalizadas incorporan sus respectivos códigos y dependencias, por lo que las tareas de Kestra no dependen de volúmenes de código locales.
+Ingresar con las credenciales definidas en `.env`:
 
-## 7. Configuración y ejecución de Kestra
+- Usuario: `KESTRA_BASIC_AUTH_USERNAME`
+- Contraseña: `KESTRA_BASIC_AUTH_PASSWORD`
 
-El flujo principal se encuentra en:
+## 8. Configurar y ejecutar el flujo en Kestra
+
+El flujo se encuentra en:
 
 ```text
 kestra/flows/aapl_ingestion.yml
 ```
 
-Para registrarlo en Kestra:
+Para registrarlo:
 
-1. Abrir la interfaz web.
-2. Entrar en el namespace `pset2`.
-3. Crear o importar el flujo `aapl_ingestion`.
-4. Incorporar la definición del archivo YAML del repositorio.
+1. Abrir la interfaz web de Kestra.
+2. Acceder a la sección de Flows.
+3. Importar el archivo `aapl_ingestion.yml`.
+4. Verificar el namespace `pset2` y el identificador `aapl_ingestion`.
 5. Guardar el flujo.
+6. Ejecutar manualmente el flujo o utilizar su programación configurada.
 
-La ejecución manual permite especificar las fechas de extracción.
+El flujo recibe dos parámetros:
 
-Valores predeterminados:
-
-| Parámetro | Valor |
+| Parámetro | Valor predeterminado |
 |---|---|
 | `start_date` | `2010-07-01` |
 | `end_date` | `2026-10-01` |
 
 La fecha final es exclusiva.
 
-Para iniciar el procesamiento, utilizar el botón **Execute** en la interfaz de Kestra.
+### Etapas del flujo
 
-El flujo también cuenta con una programación automática de lunes a viernes a las 18:00, hora de Ecuador.
+| Tarea | Descripción |
+|---|---|
+| `ingest_aapl` | Descarga los datos de Yahoo Finance y realiza la carga idempotente en Snowflake RAW mediante MERGE. |
+| `dbt_debug` | Verifica la conexión y configuración de dbt. |
+| `dbt_run` | Ejecuta las transformaciones Bronze, Silver y Gold. |
+| `dbt_test` | Ejecuta las pruebas de calidad de datos declaradas en dbt. |
+| `spark_build_obt` | Construye, valida y publica la tabla OBT en Snowflake. |
 
-La política de reintentos exponenciales está configurada para las tareas de procesamiento que pueden experimentar fallos transitorios.
+El flujo está programado de lunes a viernes a las 18:00, con zona horaria `America/Guayaquil`.
 
-El archivo CSV generado durante la ingesta se conserva como archivo de salida de la tarea mediante `outputFiles` de Kestra.
+## 9. Modelado y almacenamiento de datos
 
-## 8. Validación del resultado
+Las transformaciones se organizan en tres capas:
 
-### 8.1. Ejecución de Kestra
+| Capa | Modelo | Función |
+|---|---|---|
+| Bronze | `BRONZE_AAPL_DAILY` | Selección de columnas y estandarización de tipos. |
+| Silver | `SILVER_AAPL_DAILY` | Normalización de símbolos y filtrado de registros inválidos. |
+| Gold | `DIM_DATE` | Dimensión temporal. |
+| Gold | `DIM_SYMBOL` | Dimensión de activos. |
+| Gold | `FACT_AAPL_DAILY` | Tabla de hechos con el precio de cierre y metadatos. |
 
-Una ejecución satisfactoria debe completar las siguientes tareas:
+dbt ejecuta las transformaciones directamente en Snowflake.
 
-- `ingest_aapl`
-- `dbt_debug`
-- `dbt_run`
-- `dbt_test`
-- `spark_build_obt`
-
-### 8.2. Datos en Snowflake
-
-Los datos originales se almacenan en:
-
-```text
-PSET2_DB.RAW.AAPL_DAILY
-```
-
-Las capas de transformación se almacenan en:
-
-```text
-PSET2_DB.BRONZE
-PSET2_DB.SILVER
-PSET2_DB.GOLD
-```
-
-La tabla final se encuentra en:
+Posteriormente, Spark lee las tablas Gold, realiza las uniones por las claves de fecha y símbolo, y construye la tabla final:
 
 ```text
 PSET2_DB.OBT.AAPL_DAILY_OBT
 ```
 
-### 8.3. Consulta de validación de la OBT
+La OBT integra los atributos de calendario, la identificación del activo, el precio de cierre y los metadatos de procedencia.
 
-Ejecutar en Snowflake:
+## 10. Validación de resultados
+
+El proyecto incorpora controles de calidad en dbt y Spark, entre ellos:
+
+- Validación de valores nulos.
+- Validación de unicidad.
+- Validación de relaciones entre dimensiones y hechos.
+- Validación de precios positivos.
+- Validación del grano de la tabla de hechos.
+- Comparación de conteos entre la tabla de hechos y la OBT.
+- Comprobación de duplicados antes y después de publicar la tabla final.
+
+Para consultar el resultado:
+
+```sql
+SELECT *
+FROM PSET2_DB.OBT.AAPL_DAILY_OBT
+ORDER BY DATE_KEY DESC
+LIMIT 10;
+```
+
+Para verificar el volumen y período:
 
 ```sql
 SELECT
     COUNT(*) AS TOTAL_REGISTROS,
     COUNT(DISTINCT DATE_KEY) AS FECHAS_UNICAS,
     COUNT(DISTINCT SYMBOL_KEY) AS SIMBOLOS,
-    MIN(TRADE_DATE) AS FECHA_MINIMA,
-    MAX(TRADE_DATE) AS FECHA_MAXIMA,
-    COUNT_IF(
-        CLOSE_PRICE IS NULL OR CLOSE_PRICE <= 0
-    ) AS PRECIOS_INVALIDOS
+    MIN(DATE_KEY) AS FECHA_INICIAL,
+    MAX(DATE_KEY) AS FECHA_FINAL
 FROM PSET2_DB.OBT.AAPL_DAILY_OBT;
 ```
 
-Resultados obtenidos para el período histórico validado:
+## 11. Detener los servicios
 
-| Indicador | Resultado |
-|---|---:|
-| Registros | 4.087 |
-| Fechas únicas | 4.087 |
-| Símbolos | 1 |
-| Fecha mínima | 2010-07-01 |
-| Fecha máxima | 2026-09-30 |
-| Precios inválidos | 0 |
-| Duplicados por fecha y símbolo | 0 |
+Para detener los contenedores:
 
-Spark realiza una validación de la cantidad de registros y del grano de la OBT antes y después de publicar la tabla.
+```bash
+docker compose down
+```
 
-La tabla de staging se elimina después de una publicación satisfactoria.
+Este comando conserva los volúmenes persistentes de Docker. No utilizar `docker compose down -v` salvo que se desee eliminar también esos volúmenes y el estado local asociado.
 
-## 9. Seguridad
+## 12. Seguridad y consideraciones
 
-- No versionar `.env` ni `.env_encoded`.
-- No incluir contraseñas directamente en los scripts.
-- Mantener los secretos de GitHub Codespaces y Snowflake fuera del repositorio.
-- No publicar credenciales en capturas de pantalla o logs.
-- Mantener excluidos los archivos temporales y las cachés generadas automáticamente.
-- No eliminar los volúmenes persistentes de Docker sin verificar previamente su contenido.
+- No subir archivos `.env` ni `.env_encoded` al repositorio.
+- No incluir contraseñas ni secretos en el código fuente.
+- Cada usuario debe configurar sus propias credenciales y recursos de Snowflake.
+- La fuente de datos es Yahoo Finance mediante yfinance; su disponibilidad depende del proveedor.
+- La ingesta utiliza `auto_adjust=False`, por lo que los precios de cierre no están ajustados por dividendos ni splits.
+- Los registros con `Close` nulo se descartan durante la extracción.
+- El alcance de esta entrega comprende la ingesta, transformación, validación y publicación de la OBT. No incluye el entrenamiento de un modelo predictivo.
+
+---
+
+**Proyecto académico — Maestría en Ciencia de Datos**  
+**Universidad San Francisco de Quito (USFQ)**  
+**PSet 2 — Ingeniería de Datos**
