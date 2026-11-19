@@ -172,25 +172,51 @@ El script valida las variables requeridas, conserva los valores configurados y g
 
 Antes de ejecutar el pipeline, deben existir los recursos necesarios en Snowflake.
 
-Abrir una hoja de trabajo (*Worksheet*) en Snowflake y ejecutar el contenido de:
+1. Abrir una hoja de trabajo (*Worksheet*) en Snowflake.
+2. Seleccionar el rol `ACCOUNTADMIN` o un rol administrativo con permisos equivalentes.
+3. Ejecutar el contenido completo del archivo:
 
 ```text
 scripts/initialize_snowflake.sql
 ```
 
-La inicialización requiere un rol administrativo con permisos suficientes para crear o configurar los recursos del proyecto y conceder privilegios al rol `PSET2_ROLE`.
+El script crea, si no existen, los siguientes recursos:
 
-El script prepara los recursos iniciales utilizados por la ingesta:
+| Recurso | Nombre |
+|---|---|
+| Rol | `PSET2_ROLE` |
+| Warehouse | `COMPUTE_WH` |
+| Base de datos | `PSET2_DB` |
+| Esquema de entrada | `RAW` |
+| Tabla de entrada | `AAPL_DAILY` |
 
-- Rol `PSET2_ROLE`.
-- Warehouse `COMPUTE_WH`.
-- Base de datos `PSET2_DB`.
-- Esquema `RAW`.
-- Tabla de entrada `AAPL_DAILY` y los permisos correspondientes.
+También concede al rol del proyecto los permisos necesarios para utilizar el warehouse, acceder a la base de datos y operar sobre la tabla RAW.
 
-El usuario de Snowflake debe tener los privilegios necesarios para utilizar el rol, warehouse, base de datos y esquemas del proyecto.
+### Asignar el rol al usuario de Snowflake
 
-Las capas de transformación y la tabla final se construyen durante la ejecución del pipeline.
+La asignación del rol al usuario debe realizarse por separado. En una hoja de trabajo con permisos administrativos, ejecutar:
+
+```sql
+GRANT ROLE PSET2_ROLE TO USER NOMBRE_DE_USUARIO;
+```
+
+Reemplazar `NOMBRE_DE_USUARIO` por el nombre exacto del usuario de inicio de sesión de Snowflake. No escribir literalmente el texto del ejemplo.
+
+### Configurar las credenciales de conexión
+
+En el archivo `.env` se deben configurar:
+
+- `SNOWFLAKE_ACCOUNT`: identificador de cuenta de Snowflake.
+- `SNOWFLAKE_USER`: usuario de inicio de sesión.
+- `SNOWFLAKE_PASSWORD`: contraseña.
+- `SNOWFLAKE_ROLE`: `PSET2_ROLE`.
+- `SNOWFLAKE_WAREHOUSE`: `COMPUTE_WH`.
+- `SNOWFLAKE_DATABASE`: `PSET2_DB`.
+- `SNOWFLAKE_SCHEMA`: `RAW`.
+
+El identificador de cuenta (`SNOWFLAKE_ACCOUNT`) no es el nombre de usuario (`SNOWFLAKE_USER`). Son valores independientes y deben corresponder a la cuenta y al usuario configurados en Snowflake.
+
+Las transformaciones posteriores crean y utilizan los esquemas correspondientes a las capas Bronze, Silver, Gold y OBT.
 
 ## 7. Construir y levantar los servicios
 
